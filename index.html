@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Video Semantic Analyzer</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<h1>Video Semantic Analyzer</h1>
+
+<p>Upload a video and compare it with a reference answer</p>
+
+<input type="file" id="videoInput">
+
+<h3>Reference Answer</h3>
+
+<textarea id="referenceAnswer"
+placeholder="Enter expected description"></textarea>
+
+<br>
+
+<button id="analyzeBtn">Analyze Video</button>
+
+<h3>Audio Transcript</h3>
+
+<textarea id="videoText" readonly>
+Waiting for analysis...
+</textarea>
+
+<h3>Frame Semantic Description</h3>
+
+<textarea id="frameText" readonly>
+Waiting for analysis...
+</textarea>
+
+<h3>Similarity Score</h3>
+
+<div class="progress-bar">
+
+<div id="score-bar"></div>
+
+</div>
+
+<p id="score-text">0%</p>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+
+</html>
