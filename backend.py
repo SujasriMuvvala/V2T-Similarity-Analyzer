@@ -7,6 +7,8 @@ import cv2
 import os
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
+import numpy as np
+from ultralytics import YOLO
 
 app = Flask(__name__)
 
@@ -18,15 +20,18 @@ os.makedirs(FRAME_FOLDER, exist_ok=True)
 
 print("Loading AI models...")
 
-# audio model
+# Audio model
 whisper_model = whisper.load_model("tiny")
 
-# semantic model
+# Semantic similarity model
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# image caption model
+# Image caption model
 processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
 blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+
+# Object detection model
+yolo_model = YOLO("yolov8n.pt")
 
 print("Models loaded successfully")
 
@@ -61,9 +66,7 @@ def speech_to_text(audio_path):
 
     result = whisper_model.transcribe(audio_path)
 
-    transcript = result["text"]
-
-    return transcript
+    return result["text"]
 
 
 # ---------------------------
@@ -109,6 +112,65 @@ def extract_frames(video_path):
 
 
 # ---------------------------
+# YOLO Object Detection
+# ---------------------------
+def detect_objects(frame_path):
+
+    results = yolo_model(frame_path)
+
+    detected_objects = []
+
+    for r in results:
+        for box in r.boxes:
+            label = yolo_model.names[int(box.cls)]
+            detected_objects.append(label)
+
+    return list(set(detected_objects))
+
+
+# ---------------------------
+# Day/Night Detection
+# ---------------------------
+def detect_time(frame_path):
+
+    img = cv2.imread(frame_path)
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    brightness = np.mean(gray)
+
+    if brightness > 100:
+        return "daytime"
+    else:
+        return "nighttime"
+
+
+# ---------------------------
+# Convert detections to English sentence
+# ---------------------------
+def generate_semantic_paragraph(objects, time_of_day):
+
+    sentence = ""
+
+    if "person" in objects:
+        sentence += "A person is visible in the scene. "
+
+    animals = ["dog", "cat", "cow", "horse", "bird"]
+
+    detected_animals = [a for a in animals if a in objects]
+
+    if detected_animals:
+        sentence += "An animal such as " + ", ".join(detected_animals) + " appears in the video. "
+
+    if "ball" in objects:
+        sentence += "Someone appears to be interacting with a ball. "
+
+    sentence += f"The video appears to be recorded during the {time_of_day}. "
+
+    return sentence
+
+
+# ---------------------------
 # Describe frames
 # ---------------------------
 def describe_frames(frame_paths):
@@ -125,7 +187,15 @@ def describe_frames(frame_paths):
 
         caption = processor.decode(output[0], skip_special_tokens=True)
 
-        descriptions.append(caption)
+        objects = detect_objects(frame)
+
+        time_of_day = detect_time(frame)
+
+        semantic_sentence = generate_semantic_paragraph(objects, time_of_day)
+
+        final_description = caption + " " + semantic_sentence
+
+        descriptions.append(final_description)
 
     return " ".join(descriptions)
 
@@ -183,126 +253,4 @@ def analyze():
 
 
 if __name__ == "__main__":
-
     app.run(debug=True)
-    # ================================
-    # IMPORT LIBRARIES
-    # ================================
-
-    import cv2
-    import numpy as np
-    from ultralytics import YOLO
-
-    # ================================
-    # LOAD YOLO MODEL (runs once)
-    # ================================
-
-    # YOLOv8 model for detecting objects like person, dog, ball etc.
-    yolo_model = YOLO("yolov8n.pt")
-
-
-    # ================================
-    # FUNCTION 1: OBJECT DETECTION
-    # ================================
-
-    def detect_objects(frame_path):
-        """
-        Detect objects in the frame using YOLO
-        Returns a list of detected objects
-        """
-
-        results = yolo_model(frame_path)
-
-        detected_objects = []
-
-        for r in results:
-            for box in r.boxes:
-                # get object label name
-                label = yolo_model.names[int(box.cls)]
-
-                detected_objects.append(label)
-
-        # remove duplicate detections
-        return list(set(detected_objects))
-
-
-    # ================================
-    # FUNCTION 2: DAY / NIGHT DETECTION
-    # ================================
-
-    def detect_time(frame_path):
-        """
-        Detect whether the scene is daytime or nighttime
-        using brightness of the image
-        """
-
-        img = cv2.imread(frame_path)
-
-        # convert image to grayscale
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # calculate brightness
-        brightness = np.mean(gray)
-
-        if brightness > 100:
-            return "daytime"
-        else:
-            return "nighttime"
-
-
-    # ================================
-    # FUNCTION 3: GENERATE ENGLISH SENTENCE
-    # ================================
-
-    def generate_semantic_paragraph(objects, time_of_day):
-        """
-        Convert detected objects into natural English sentences
-        """
-
-        sentence = ""
-
-        # detect person
-        if "person" in objects:
-            sentence += "A person is visible in the scene. "
-
-        # detect animals
-        animals = ["dog", "cat", "cow", "horse", "bird"]
-
-        detected_animals = [animal for animal in animals if animal in objects]
-
-        if detected_animals:
-            sentence += "An animal such as " + ", ".join(detected_animals) + " appears in the video. "
-
-        # detect ball activity
-        if "ball" in objects:
-            sentence += "Someone seems to be interacting with a ball. "
-
-        # add time description
-        sentence += f"The video appears to be recorded during the {time_of_day}. "
-
-        return sentence
-
-
-    # ================================
-    # FUNCTION 4: MAIN VISUAL SEMANTIC GENERATION
-    # ================================
-
-    def generate_visual_semantics(frame_path, caption):
-        """
-        Combine BLIP caption with object detection and
-        generate a semantic paragraph
-        """
-
-        # detect objects
-        objects = detect_objects(frame_path)
-
-        # detect day or night
-        time_of_day = detect_time(frame_path)
-
-        # convert detections into english sentence
-        semantic_sentence = generate_semantic_paragraph(objects, time_of_day)
-
-        # combine with caption generated by BLIP
-        final_description = caption + " " + semantic_sentence
-
-        return final_description
